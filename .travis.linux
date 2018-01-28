@@ -1,0 +1,160 @@
+#!/usr/bin/env bash
+set -e
+
+r=$(pwd)
+
+mkdir -p ${r}/tools
+mkdir -p ${r}/build
+
+if [[ ! -d "${r}/build/musl-cross-make" ]] ; then
+    git clone https://github.com/just-containers/musl-cross-make.git "${r}/build/musl-cross-make"
+else
+    pushd "${r}/build/musl-cross-make"
+    git pull origin master
+    popd # build/musl-cross-make
+fi
+
+pushd "${r}/build/musl-cross-make"
+
+cat > config.mak <<EOF
+TARGET = x86_64-pc-linux-musl
+COMMON_CONFIG += --disable-nls
+COMMON_CONFIG += CFLAGS="-g0 -Os" CXXFLAGS="-g0 -Os" LDFLAGS="-s"
+GCC_CONFIG += --enable-languages=c,c++
+GCC_CONFIG += --disable-libquadmath --disable-decimal-float
+GCC_CONFIG += --disable-multilib --with-system-zlib
+BINUTILS_VER = 2.28.1
+GCC_VER = 5.5.0
+MUSL_VER = 1.1.18
+GMP_VER = 6.1.2
+MPC_VER = 1.0.3
+MPFR_VER = 3.1.6
+ISL_VER = 0.18
+LINUX_VER = 4.4.10
+EOF
+
+make OUTPUT="${r}/tools" install
+popd # build/musl-cross-make
+
+export PATH="${r}/tools/bin:$PATH"
+
+mkdir -p "${r}/build/zlib"
+pushd "${r}/build/zlib"
+if [[ ! -f zlib-1.2.11.tar.gz ]] ; then
+    curl -R -L -o zlib-1.2.11.tar.gz https://www.zlib.net/zlib-1.2.11.tar.gz
+    echo "c3e5e9fdd5004dcb542feda5ee4f0ff0744628baf8ed2dd5d66f8ca1197cb1a1  zlib-1.2.11.tar.gz" | sha256sum -c
+fi
+tar xf zlib-1.2.11.tar.gz
+pushd zlib-1.2.11
+
+
+CC="x86_64-pc-linux-musl-gcc" \
+LD="x86_64-pc-linux-musl-ld" \
+AR="x86_64-pc-linux-musl-ar" \
+RANLIB="x86_64-pc-linux-musl-ranlib" \
+./configure --prefix="${r}/tools/x86_64-pc-linux-musl" --static
+
+make
+make install
+
+popd # build/zlib/zlib-1.2.11
+popd # build/zlib
+
+mkdir -p "${r}/build/bzip2"
+pushd "${r}/build/bzip2"
+if [[ ! -f bzip2-1.0.6.tar.gz ]] ; then
+    curl -R -L -o bzip2-1.0.6.tar.gz http://www.bzip.org/1.0.6/bzip2-1.0.6.tar.gz
+    echo "a2848f34fcd5d6cf47def00461fcb528a0484d8edef8208d6d2e2909dc61d9cd  bzip2-1.0.6.tar.gz" | sha256sum -c
+fi
+
+tar xf bzip2-1.0.6.tar.gz
+pushd bzip2-1.0.6
+mv Makefile Makefile.orig
+sed -e "/^all:/s/ test//" Makefile.orig > Makefile
+
+make \
+CC=x86_64-pc-linux-musl-gcc \
+AR=x86_64-pc-linux-musl-ar \
+RANLIB=x86_64-pc-linux-musl-ranlib \
+PREFIX="${r}/tools/x86_64-pc-linux-musl" \
+install
+
+popd # build/bzip2/bzip2-1.0.6
+
+popd # build/bzip2
+
+mkdir -p "${r}/build/xz"
+pushd "${r}/build/xz"
+
+if [[ ! -f xz-5.2.3.tar.gz ]] ; then
+    curl -R -L -o xz-5.2.3.tar.gz https://tukaani.org/xz/xz-5.2.3.tar.gz
+    echo "71928b357d0a09a12a4b4c5fafca8c31c19b0e7d3b8ebb19622e96f26dbf28cb  xz-5.2.3.tar.gz" | sha256sum -c
+fi
+tar xf xz-5.2.3.tar.gz
+pushd xz-5.2.3
+./configure \
+  --host=x86_64-pc-linux-musl \
+  --prefix="${r}/tools/x86_64-pc-linux-musl"
+make
+make install
+
+popd # build/xz/xz-5.2.3
+
+popd # build/xz
+
+mkdir -p "${r}/build/boost"
+pushd "${r}/build/boost"
+
+if [[ ! -f boost_1_66_0.tar.bz2 ]] ; then
+  curl -R -L -o boost_1_66_0.tar.bz2 https://dl.bintray.com/boostorg/release/1.66.0/source/boost_1_66_0.tar.bz2
+  echo "5721818253e6a0989583192f96782c4a98eb6204965316df9f5ad75819225ca9  boost_1_66_0.tar.bz2" | sha256sum -c
+fi
+tar xf boost_1_66_0.tar.bz2
+pushd boost_1_66_0
+
+./bootstrap.sh --with-toolset=gcc
+echo "using gcc : musl : x86_64-pc-linux-musl-g++ ;" > user-config.jam
+./b2 \
+  variant=release \
+  debug-symbols=off \
+  threading=multi \
+  runtime-link=static \
+  link=static \
+  toolset=gcc-musl \
+  cflags="-fPIC" \
+  cxxflags="-fPIC -std=c++11" \
+  linkflags="-s" \
+  --without-python \
+  --disable-icu \
+  --layout=system \
+  --prefix="${r}/tools/x86_64-pc-linux-musl" \
+  --user-config=user-config.jam \
+  install
+
+popd # boost_1_66_0
+
+popd # boost
+
+mkdir -p "${r}/build/turtlecoin"
+pushd "${r}/build/turtlecoin"
+
+cmake \
+  -DCMAKE_SYSTEM_NAME=Linux \
+  -DMAKE_CROSS_COMPILING=ON \
+  -DCMAKE_C_COMPILER="x86_64-pc-linux-musl-gcc" \
+  -DCMAKE_CXX_COMPILER="x86_64-pc-linux-musl-gcc" \
+  -DBUILD_SHARED_LIBS=OFF \
+  -DBUILD_STATIC_LIBS=ON \
+  -DBUILD_SHARED=OFF \
+  -DBUILD_STATIC=ON \
+  -DLIBTYPE=STATIC \
+  -DCMAKE_FIND_ROOT_PATH="${r}/tools/x86_64-pc-linux-musl" \
+  -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER \
+  -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY \
+  -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY \
+  -DCMAKE_PREFIX_PATH="${r}/tools/x86_64-pc-linux-musl" \
+  -DCMAKE_INSTALL_PREFIX="${r}/tools/x86_64-pc-linux-musl" \
+  "${r}"
+make
+
+popd # build/turtlecoin

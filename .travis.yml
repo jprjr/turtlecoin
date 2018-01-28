@@ -1,0 +1,6 @@
+language: c
+compiler: gcc
+sudo: false
+dist: trusty
+script:
+- travis_wait 60 bash -e ${TRAVIS_BUILD_DIR}/.travis.linux
