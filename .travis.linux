@@ -129,6 +129,7 @@ echo "using gcc : musl : x86_64-pc-linux-musl-g++ ;" > user-config.jam
   --layout=system \
   --prefix="${r}/tools/x86_64-pc-linux-musl" \
   --user-config=user-config.jam \
+  -j$(nproc) \
   install
 
 popd # boost_1_66_0
@@ -143,6 +144,7 @@ cmake \
   -DMAKE_CROSS_COMPILING=ON \
   -DCMAKE_C_COMPILER="x86_64-pc-linux-musl-gcc" \
   -DCMAKE_CXX_COMPILER="x86_64-pc-linux-musl-gcc" \
+  -DCMAKE_EXE_LINKER_FLAGS="-static --static" \
   -DBUILD_SHARED_LIBS=OFF \
   -DBUILD_STATIC_LIBS=ON \
   -DBUILD_SHARED=OFF \
@@ -155,6 +157,6 @@ cmake \
   -DCMAKE_PREFIX_PATH="${r}/tools/x86_64-pc-linux-musl" \
   -DCMAKE_INSTALL_PREFIX="${r}/tools/x86_64-pc-linux-musl" \
   "${r}"
-make
+make -j$(nproc)
 
 popd # build/turtlecoin
